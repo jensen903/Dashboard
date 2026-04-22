@@ -2,84 +2,141 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>窄巷口可视化驾驶舱 - 恢复版</title>
+    <title>窄巷口驾驶舱 - 逐步恢复 (第三步)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/echarts@4.9.0/map/js/china.js"></script>
-    <!-- 引入数据库 -->
     <script src="./dist/db.js"></script>
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     <style>
         body { background-color: #f0f2f5; font-family: system-ui, sans-serif; }
-        .sidebar { width: 200px; background: #001529; height: 100vh; color: #fff; position: fixed; }
-        .main { margin-left: 200px; padding: 2rem; }
+        .sidebar { width: 220px; background: #001529; height: 100vh; color: #fff; position: fixed; z-index: 50; }
+        .main { margin-left: 220px; padding: 2rem; min-height: 100vh; }
         .card { background: #fff; border-radius: 8px; padding: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
         .stat-value { font-size: 24px; font-weight: bold; color: #1890ff; }
-        .nav-item { padding: 12px 24px; cursor: pointer; }
+        .nav-item { padding: 12px 24px; cursor: pointer; transition: 0.2s; }
         .nav-item.active { background: #1890ff; }
+        .chart-container { height: 350px; width: 100%; }
+        #map-chart { height: 500px; width: 100%; }
     </style>
 </head>
 <body>
     <div id="app" class="flex">
+        <!-- 侧边栏 -->
         <div class="sidebar">
             <div class="p-6 font-bold border-b border-gray-700 mb-4 text-center">窄巷口驾驶舱</div>
             <div v-for="m in menu" :key="m.k" :class="['nav-item', tab === m.k ? 'active' : '']" @click="tab = m.k">{{ m.n }}</div>
         </div>
+
+        <!-- 主内容 -->
         <div class="main flex-grow">
             <div class="flex justify-between items-center mb-6">
                 <h1 class="text-2xl font-bold">{{ currentName }}</h1>
                 <div class="bg-white p-2 rounded border text-xs">2026-01-01 至 2026-01-31</div>
             </div>
 
-            <!-- 大盘 -->
+            <!-- 1. 大盘概览 -->
             <div v-show="tab === 'overview'" class="space-y-6">
+                <!-- 磁贴 -->
                 <div class="grid grid-cols-4 gap-6">
-                    <div class="card" v-for="t in stats.tiles"><div class="text-gray-400 text-xs">{{t.l}}</div><div class="stat-value">{{t.v}}</div></div>
+                    <div class="card" v-for="tile in stats.tiles">
+                        <div class="text-gray-400 text-xs mb-1">{{ tile.label }}</div>
+                        <div class="stat-value text-xl">{{ tile.prefix }}{{ formatNum(tile.value) }}</div>
+                    </div>
                 </div>
-                <div class="card"><div id="map" style="height:500px"></div></div>
+
+                <!-- 地图 (Step 3 新增) -->
+                <div class="card">
+                    <div class="font-bold mb-4">全国营收热力分布 (基于1月实收)</div>
+                    <v-chart :option="options.overview.map" height="500px"></v-chart>
+                </div>
+
+                <!-- 平台博弈图表组 (Step 3 新增) -->
+                <div class="grid grid-cols-2 gap-6">
+                    <div class="card"><div class="font-bold mb-4 text-sm">平台营收贡献占比</div><v-chart :option="options.overview.pie" height="300px"></v-chart></div>
+                    <div class="card"><div class="font-bold mb-4 text-sm">平台订单量对比</div><v-chart :option="options.overview.barOrders" height="300px"></v-chart></div>
+                    <div class="card"><div class="font-bold mb-4 text-sm">平台客单价对比 (客单价=实付/订单)</div><v-chart :option="options.overview.barAvg" height="300px"></v-chart></div>
+                    
+                    <!-- 原有的表格保留 -->
+                    <div class="card">
+                        <div class="font-bold mb-4 text-sm">平台核心指标综合对比表</div>
+                        <table class="w-full text-xs text-left">
+                            <thead class="bg-gray-50 font-bold"><tr><th class="p-2">平台</th><th class="p-2 text-right">收入</th><th class="p-2 text-right">订单</th><th class="p-2 text-right">客单价</th></tr></thead>
+                            <tbody><tr v-for="p in platformTable" :key="p.name" class="border-b"><td class="p-2 font-bold">{{p.name}}</td><td class="p-2 text-right">¥{{formatNum(p.revenue)}}</td><td class="p-2 text-right">{{formatNum(p.orders)}}</td><td class="p-2 text-right text-blue-600">{{p.avgPay}}</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
             </div>
 
-            <!-- 趋势 -->
-            <div v-show="tab === 'trend'" class="space-y-6">
-                <div class="grid grid-cols-2 gap-6">
-                    <div class="card" v-for="id in ['t1','t2','t3','t4']"><div :id="id" style="height:300px"></div></div>
-                </div>
+            <div v-show="tab !== 'overview'" class="card py-20 text-center text-gray-400 font-bold">
+                🛠️ {{ currentName }} 模块正在 Step 4-6 中逐步复活...
             </div>
         </div>
     </div>
-    <script>
-        // 兜底数据
-        if (typeof DB === 'undefined') window.DB = { all_records: [], provinces: [] };
 
-        const { createApp, ref, computed, onMounted, watch } = Vue;
+    <script>
+        if (typeof DB === 'undefined') window.DB = { all_records: [], provinces: [] };
+        const { createApp, ref, computed, watch, onMounted } = Vue;
+
+        // 积木化图表组件
+        const VChart = {
+            props: ['option', 'height'],
+            template: `<div ref="el" :style="{height:height||'350px', width:'100%'}"></div>`,
+            setup(props) {
+                const el = ref(null);
+                let chart = null;
+                const update = () => { if(chart && props.option) chart.setOption(props.option, true); };
+                onMounted(() => {
+                    chart = echarts.init(el.value); update();
+                    new ResizeObserver(() => chart.resize()).observe(el.value);
+                });
+                watch(() => props.option, update, {deep:true});
+                return { el };
+            }
+        };
+
         createApp({
+            components: {'v-chart': VChart},
             setup() {
                 const tab = ref('overview');
-                const menu = [{n:'大盘概览',k:'overview'},{n:'趋势分析',k:'trend'},{n:'门店排行',k:'store'}];
+                const menu = [{n:'大盘概览',k:'overview'},{n:'趋势分析',k:'trend'},{n:'门店分析',k:'store'}];
+
                 const stats = computed(() => {
-                    const r = DB.all_records.reduce((a,b)=>a+b.revenue, 0);
-                    const o = DB.all_records.reduce((a,b)=>a+b.orders, 0);
-                    return { tiles: [{l:'总营收', v:'¥'+r.toFixed(0)}, {l:'总订单',v:o}, {l:'覆盖省份',v:DB.provinces.length}, {l:'数据更新',v:'1月'}] };
+                    const data = DB.all_records || [];
+                    const r = data.reduce((a,b)=>a+(b.revenue||0), 0);
+                    const o = data.reduce((a,b)=>a+(b.orders||0), 0);
+                    return { totalR:r, totalO:o, tiles: [{label:'总营收',v:r,prefix:'¥'},{label:'总订单',v:o,prefix:''},{label:'活跃门店',v:new Set(data.map(x=>x.std_name)).size,prefix:''},{label:'覆盖省份',v:14,prefix:''}] };
                 });
 
-                const draw = () => {
-                    if(tab.value === 'overview') {
-                        const m = echarts.init(document.getElementById('map'));
-                        m.setOption({ series:[{type:'map', mapType:'china', data:[]}] });
-                    }
-                    if(tab.value === 'trend') {
-                        const dates = [...new Set(DB.all_records.map(d=>d.date_fmt))].sort();
-                        ['t1','t2','t3','t4'].forEach(id => {
-                            const c = echarts.init(document.getElementById(id));
-                            c.setOption({ xAxis:{data:dates}, series:[{type:'line', data:dates.map(d=>DB.all_records.filter(x=>x.date_fmt===d).reduce((a,b)=>a+b.revenue,0))}] });
-                        });
-                    }
-                };
+                const platformTable = computed(() => {
+                    const data = DB.all_records || [];
+                    const plats = ['美团', '京东', '饿了么'];
+                    return plats.map(p => {
+                        const d = data.filter(x=>x.platform===p);
+                        const r = d.reduce((a,b)=>a+b.revenue,0);
+                        const o = d.reduce((a,b)=>a+b.orders,0);
+                        return { name:p, revenue:r, orders:o, avgPay:(d.reduce((a,b)=>a+b.actual_pay,0)/(o||1)).toFixed(2) };
+                    });
+                });
 
-                watch(tab, () => setTimeout(draw, 50));
-                onMounted(() => setTimeout(draw, 500));
+                // 图表 Option 配置 (Step 3 核心)
+                const options = computed(() => {
+                    const data = DB.all_records || [];
+                    const pStats = platformTable.value;
+                    // 地图数据
+                    const provMap = {}; data.forEach(r => { provMap[r.province] = (provMap[r.province]||0) + r.revenue; });
 
-                return { tab, menu, stats, currentName: computed(()=>menu.find(m=>m.k===tab.value).n) };
+                    return {
+                        overview: {
+                            map: { visualMap:{min:0, max:stats.value.totalR/8, inRange:{color:['#e0ffff','#1890ff']}}, series:[{type:'map', mapType:'china', data:Object.keys(provMap).map(k=>({name:k.replace('省','').replace('市',''), value:provMap[k]}))}] },
+                            pie: { tooltip:{trigger:'item'}, series:[{type:'pie', radius:['40%','70%'], data:pStats.map(i=>({name:i.name, value:i.revenue}))}] },
+                            barOrders: { xAxis:{type:'category', data:pStats.map(i=>i.name)}, yAxis:{type:'value'}, series:[{type:'bar', data:pStats.map(i=>i.orders), itemStyle:{color:'#52c41a'}}] },
+                            barAvg: { xAxis:{type:'category', data:pStats.map(i=>i.name)}, yAxis:{type:'value'}, series:[{type:'bar', data:pStats.map(i=>i.avgPay), itemStyle:{color:'#fa8c16'}}] }
+                        }
+                    };
+                });
+
+                return { tab, menu, stats, platformTable, options, currentName: computed(()=>menu.find(m=>m.k===tab.value).n), formatNum: (n)=>Number(n).toLocaleString('zh-CN',{maximumFractionDigits:0}) };
             }
         }).mount('#app');
     </script>
